@@ -1,0 +1,6 @@
+name: "MessagePack"
+platforms:
+    common:
+        context:
+            defines: ["MPACK_HAS_CONFIG=1"]
+            includes: ["include/messagepack"]

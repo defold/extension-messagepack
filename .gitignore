@@ -1,0 +1,8 @@
+.DS_Store
+.internal/
+.cache/
+build/
+build_*/
+bundle/
+*.pyc
+__pycache__/
