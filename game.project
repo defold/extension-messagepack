@@ -1,0 +1,19 @@
+[project]
+title = extension-messagepack
+custom_resources = /tests/test_decode.lua,/tests/test_encode.lua
+
+[bootstrap]
+main_collection = /main/main.collectionc
+
+[display]
+width = 960
+height = 640
+
+[script]
+shared_state = 1
+
+[input]
+game_binding = /builtins/input/all.input_bindingc
+
+[library]
+include_dirs = messagepack

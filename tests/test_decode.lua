@@ -1,0 +1,80 @@
+local function equal(a, b)
+	if type(a) ~= type(b) then return false end
+	if type(a) ~= "table" then return a == b end
+	for k, v in pairs(a) do
+		if not equal(v, b[k]) then return false end
+	end
+	for k in pairs(b) do
+		if a[k] == nil then return false end
+	end
+	return true
+end
+
+return function()
+	local decode = messagepack.decode
+	local char = string.char
+	local checks = 0
+	local function check(bytes, expected, options)
+		assert(equal(decode(bytes, options), expected), "decoded value differs")
+		checks = checks + 1
+	end
+	local function rejects(bytes, options)
+		assert(not pcall(decode, bytes, options), "accepted invalid MessagePack")
+		-- Failure must leave the decoder usable and its Lua stack intact.
+		assert(decode(char(42)) == 42)
+		checks = checks + 1
+	end
+
+	-- Scalars and all integer widths, including signed boundary encodings.
+	check(char(0xc0), nil)
+	check(char(0xc0), messagepack.null, {decode_null_as_userdata = true})
+	check(char(0xc2), false)
+	check(char(0xc3), true)
+	check(char(0), 0)
+	check(char(0x7f), 127)
+	check(char(0xe0), -32)
+	check(char(0xff), -1)
+	check(char(0xcc, 0xff), 255)
+	check(char(0xcd, 0xff, 0xff), 65535)
+	check(char(0xce, 0xff, 0xff, 0xff, 0xff), 4294967295)
+	check(char(0xcf, 0, 0x20, 0, 0, 0, 0, 0, 0), 9007199254740992)
+	check(char(0xd0, 0x80), -128)
+	check(char(0xd1, 0x80, 0), -32768)
+	check(char(0xd2, 0x80, 0, 0, 0), -2147483648)
+	check(char(0xd3, 0x80, 0, 0, 0, 0, 0, 0, 0), -9223372036854775808)
+	check(char(0xca, 0x3f, 0xc0, 0, 0), 1.5)
+	check(char(0xcb, 0x3f, 0xf8, 0, 0, 0, 0, 0, 0), 1.5)
+	check(char(0xa0), "")
+	check(char(0xa3) .. "a\0b", "a\0b")
+	check(char(0xd9, 3) .. "hej", "hej")
+	check(char(0xda, 0, 3) .. "hej", "hej")
+	check(char(0xdb, 0, 0, 0, 3) .. "hej", "hej")
+	check(char(0xc4, 3, 0, 0xff, 1), char(0, 0xff, 1))
+	check(char(0xc5, 0, 1, 42), "*")
+	check(char(0xc6, 0, 0, 0, 1, 42), "*")
+	check(char(0x90), {})
+	check(char(0x80), {})
+	check(char(0xdc, 0, 2, 1, 2), {1, 2})
+	check(char(0xdd, 0, 0, 0, 2, 1, 2), {1, 2})
+	check(char(0xde, 0, 1, 0xa1) .. "x" .. char(7), {x = 7})
+	check(char(0xdf, 0, 0, 0, 1, 0xa1) .. "x" .. char(7), {x = 7})
+	check(char(0x83, 0xa1) .. "a" .. char(0x93, 1, 0xc0, 3, 0xa1) .. "b" .. char(0xc2, 0xa1) .. "c" .. char(0xa2) .. "å", {a = {[1] = 1, [3] = 3}, b = false, c = "å"})
+	check(char(0x93, 1, 0xc0, 3), {1, messagepack.null, 3}, {decode_null_as_userdata = true})
+	check(char(0x82, 1, 7, 0xc3, 8), {[1] = 7, [true] = 8})
+	check(string.rep(char(0x91), 64) .. char(0), (function()
+		local value = 0
+		for _ = 1, 64 do value = {value} end
+		return value
+	end)())
+
+	-- Bounds checks must reject lengths before allocating enormous Lua tables.
+	for _, bytes in ipairs({"", char(0xc1), char(0xd9), char(0xa2) .. "a", char(0x91), char(0x81, 1), char(1, 2), char(0x81, 0xc0, 1), char(0xdd, 0xff, 0xff, 0xff, 0xff), char(0xdf, 0xff, 0xff, 0xff, 0xff), char(0xd4, 0, 0), string.rep(char(0x91), 65) .. char(0), char(0x81, 0xcb, 0x7f, 0xf8, 0, 0, 0, 0, 0, 0, 1)}) do
+		rejects(bytes)
+	end
+	-- Every proper prefix of a nested value must fail, including string payloads.
+	local complete = char(0x81, 0xa1) .. "x" .. char(0x93, 1, 0xa3) .. "abc" .. char(0xc4, 2, 0, 0xff)
+	for i = 0, #complete - 1 do rejects(complete:sub(1, i)) end
+	assert(not pcall(decode, {}))
+	assert(not pcall(decode, char(1), "invalid options"))
+	return checks + 2
+end

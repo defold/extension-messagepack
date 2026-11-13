@@ -1,0 +1,7 @@
+function init(self)
+	local tests = assert(loadstring(assert(sys.load_resource("/tests/test_decode.lua"))))()
+	print("MessagePack decode tests passed:", tests())
+	local encode_tests = assert(loadstring(assert(sys.load_resource("/tests/test_encode.lua"))))()
+	print("MessagePack encode tests passed:", encode_tests())
+	print("MessagePack unit tests complete")
+end
