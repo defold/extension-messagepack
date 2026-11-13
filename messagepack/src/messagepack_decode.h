@@ -230,13 +230,32 @@ namespace dmMessagePackDecode
         {
             for (uint32_t i = 0; i < count; ++i)
             {
-                if (!ReadValue(cursor, consumer, depth + 1))
+                if (!Need(cursor, 1))
                 {
                     return false;
                 }
-                if (!consumer->Key())
+                uint8_t key_tag = *cursor->m_Position;
+                if ((key_tag & 0xe0) == 0xa0)
                 {
-                    return Fail(cursor, "map key is nil or NaN");
+                    ++cursor->m_Position;
+                    uint32_t key_length = key_tag & 31;
+                    if (!Need(cursor, key_length))
+                    {
+                        return false;
+                    }
+                    consumer->String((const char*)cursor->m_Position, key_length);
+                    cursor->m_Position += key_length;
+                }
+                else
+                {
+                    if (!ReadValue(cursor, consumer, depth + 1))
+                    {
+                        return false;
+                    }
+                    if (!consumer->Key(key_tag))
+                    {
+                        return Fail(cursor, "map key is nil or NaN");
+                    }
                 }
                 if (!ReadValue(cursor, consumer, depth + 1))
                 {

@@ -58,13 +58,14 @@ namespace dmMessagePack
             luaL_checkstack(m_Lua, 4, "messagepack.decode: Lua stack limit");
             lua_createtable(m_Lua, map ? 0 : (int)count, map ? (int)count : 0);
         }
-        bool Key()
+        bool Key(uint8_t tag)
         {
-            if (lua_isnil(m_Lua, -1))
+            // Every decoded type except nil and NaN is a valid Lua map key.
+            if (tag == 0xc0)
             {
-                return false;
+                return m_NullAsUserdata;
             }
-            if (lua_type(m_Lua, -1) != LUA_TNUMBER)
+            if (tag != 0xca && tag != 0xcb)
             {
                 return true;
             }

@@ -82,7 +82,10 @@ return function()
 		{"d30000000000000000", 0}, {"d37fffffffffffffff", 2^63},
 		{"d38000000000000000", -2^63}, {"d3ffffffffffffffff", -1},
 	}
-	for _, row in ipairs(integers) do check(hex(row[1]), row[2]) end
+	for _, row in ipairs(integers) do
+		check(hex(row[1]), row[2])
+		check(char(0x81) .. hex(row[1]) .. char(42), {[row[2]]=42})
+	end
 	local floats = {
 		{"ca00000000", 0}, {"ca80000000", -1/math.huge},
 		{"ca00000001", 2^-149}, {"ca00800000", 2^-126},
@@ -96,12 +99,23 @@ return function()
 		{"cb7ff8000000000000", 0/0},
 		{"cb7ff0000000000001", 0/0}, {"cbfff9000000000001", 0/0}, {"cbffffffffffffffff", 0/0},
 	}
-	for _, row in ipairs(floats) do check(hex(row[1]), row[2]) end
+	for _, row in ipairs(floats) do
+		check(hex(row[1]), row[2])
+		local packet = char(0x81) .. hex(row[1]) .. char(42)
+		if row[2] ~= row[2] then
+			rejects(packet)
+			assert(not pcall(decode, packet))
+		else
+			check(packet, {[row[2]]=42})
+		end
+	end
 	check(char(0x93) .. hex("cb7ff0000000000000") .. char(42) .. hex("cb8000000000000000"), {math.huge, 42, -1/math.huge})
 	for _, row in ipairs({{0xd9,1,{0,31,32,255}}, {0xda,2,{0,255,256,65535}}, {0xdb,4,{0,65535,65536}}, {0xc4,1,{0,255}}, {0xc5,2,{0,255,256,65535}}, {0xc6,4,{0,65535,65536}}}) do
 		for _, n in ipairs(row[3]) do
 			local text = string.rep(row[1] >= 0xd9 and "s" or "\0\255", n):sub(1,n)
-			check(char(row[1]) .. be(n,row[2]) .. text, text)
+			local bytes = char(row[1]) .. be(n,row[2]) .. text
+			check(bytes, text)
+			check(char(0x81) .. bytes .. char(42), {[text]=42})
 		end
 	end
 	for _, row in ipairs({{0xdc,2,{0,15,16,65535}}, {0xdd,4,{0,65535,65536}}}) do
@@ -128,6 +142,23 @@ return function()
 	rejects(hex("d7ff0000000000000000"))
 	rejects(hex("c70cff000000000000000000000000"))
 	check(hex("81c02a"), {[messagepack.null]=42})
+	assert(not pcall(decode, hex("81c02a")))
+	check(hex("82012ac32b"), {[1]=42, [true]=43})
+	check(hex("81c22a"), {[false]=42})
+	check(hex("81a1c02a"), {[char(0xc0)]=42})
+	check(hex("81d901cb2a"), {[char(0xcb)]=42})
+	check(hex("81c401ca2a"), {[char(0xca)]=42})
+	-- Containers are valid identity keys, including a table containing NaN.
+	for _, bytes in ipairs({"81902a", "81802a", "8191012a", "8181a178012a", "8191ca7fc000002a"}) do
+		local value = decode(hex(bytes), preserve)
+		local key, entry = next(value)
+		assert(type(key) == "table" and entry == 42 and next(value, key) == nil)
+		if bytes == "8191012a" then assert(key[1] == 1) end
+		if bytes == "8181a178012a" then assert(key.x == 1) end
+		if bytes == "8191ca7fc000002a" then assert(key[1] ~= key[1]) end
+		checks = checks + 1
+	end
+	rejects(hex("8181ca7fc00000012a"))
 	rejects(hex("81cb7ff80000000000002a"))
 	for _, bytes in ipairs({hex("ddffffffff"),hex("dfffffffff"),hex("dbffffffff"),hex("c6ffffffff")}) do rejects(bytes) end
 	for _, bytes in ipairs({hex("cb3ff8000000000000"),hex("d912")..string.rep("a",18),hex("c600000003000102"),hex("9201a3616263"),hex("81a17892c301")}) do
