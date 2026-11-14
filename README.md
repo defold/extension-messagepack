@@ -150,4 +150,4 @@ the engine. The library dependency includes only the native extension.
 The decoder uses a bounded memory reader and MPack's alignment-safe scalar
 helpers. Encoding uses the MPack 1.1.1 writer. MPack is vendored unchanged
 under its MIT license; see [its notice](messagepack/src/mpack/README.md).
-First-party native code uses the [Defold License](LICENSE).
+This extension is licensed under the [MIT License](LICENSE).
