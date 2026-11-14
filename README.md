@@ -9,21 +9,45 @@ Format reference: [MessagePack](https://msgpack.org/index.html).
 Editor completion and API reference:
 [messagepack.script_api](messagepack/api/messagepack.script_api).
 
-## Loading data
+## Downloading and decoding
 
-Put your `.msgpack` file in a folder listed in `game.project`:
-
-```ini
-[project]
-custom_resources = /data
-```
-
-Load and decode it just like a JSON custom resource:
+Download a MessagePack file over HTTP and decode the response body directly.
+Replace the example URLs with your own endpoints.
 
 ```lua
-local bytes, error = sys.load_resource("/data/config.msgpack")
-assert(bytes, error)
-local config = messagepack.decode(bytes)
+local function on_download(self, _, response)
+	if response.status == 200 then
+		self.config = messagepack.decode(response.response)
+		pprint(self.config)
+	else
+		print("Download failed:", response.status)
+	end
+end
+
+function init(self)
+	http.request("https://example.com/data/config.msgpack", "GET", on_download)
+end
+```
+
+## Encoding and uploading
+
+Encode a Lua value and upload the binary string as the HTTP request body:
+
+```lua
+local function on_upload(self, _, response)
+	if response.status >= 200 and response.status < 300 then
+		print("Upload complete")
+	else
+		print("Upload failed:", response.status)
+	end
+end
+
+function init(self)
+	local config = {name = "player", position = {1, 2, 3}}
+	local bytes = messagepack.encode(config)
+	local headers = {["Content-Type"] = "application/msgpack"}
+	http.request("https://example.com/data/config.msgpack", "PUT", on_upload, headers, bytes)
+end
 ```
 
 `messagepack` is registered by the native extension. No Lua `require` is needed.
