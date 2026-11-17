@@ -27,11 +27,15 @@ return function()
 		return kind .. ":" .. tostring(value) .. ";"
 	end
 	local options = {decode_null_as_userdata = true}
+	-- Every extension type decodes to {type, payload}, so framing is compared too.
+	local handlers = {}
+	for t = -128, 127 do handlers[t] = function(data, ext_type) return {ext_type, data} end end
+	local with_ext = {decode_null_as_userdata = true, ext = handlers}
 	local checks = 0
-	local function check(bytes, preserve)
-		local ok, expected = pcall(reference_decode, bytes, preserve and options or nil)
+	local function check(bytes, selected)
+		local ok, expected = pcall(reference_decode, bytes, selected)
 		if ok then expected = fingerprint(expected) end
-		local valid, actual = pcall(messagepack.decode, bytes, preserve and options or nil)
+		local valid, actual = pcall(messagepack.decode, bytes, selected)
 		assert(valid == ok, "decode acceptance differs at case " .. checks)
 		if valid then assert(fingerprint(actual) == expected, "decoded value differs at case " .. checks) end
 		checks = checks + 1
@@ -53,16 +57,16 @@ return function()
 	for i = 1, 50000 do
 		local bytes = {}
 		for j = 1, random(65) do bytes[j] = string.char(random(256)) end
-		check(table.concat(bytes), i % 2 == 0)
+		check(table.concat(bytes), i % 3 == 0 and with_ext or i % 3 == 1 and options or nil)
 		if i % 1000 == 0 then collectgarbage("collect") end
 	end
 	for i = 1, 3000 do
 		local bytes = messagepack.encode(value(0))
-		check(bytes, true)
+		check(bytes, options)
 		if #bytes > 0 then
-			check(bytes:sub(1, random(#bytes)), true)
+			check(bytes:sub(1, random(#bytes)), options)
 			local at = random(#bytes) + 1
-			check(bytes:sub(1, at - 1) .. string.char(random(256)) .. bytes:sub(at + 1), true)
+			check(bytes:sub(1, at - 1) .. string.char(random(256)) .. bytes:sub(at + 1), i % 2 == 0 and with_ext or options)
 		end
 		if i % 100 == 0 then collectgarbage("collect") end
 	end

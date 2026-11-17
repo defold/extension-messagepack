@@ -37,27 +37,33 @@ static int TestDecodeOutOfMemory()
     lua_getfield(L, -1, "decode");
     int decode = luaL_ref(L, LUA_REGISTRYINDEX);
     lua_pop(L, 1);
+    // Each fixture returns the bytes and optional decode options.
     const char* fixtures[] = {
         "return messagepack.encode(string.rep('x', 50000))",
-        "local t={} for i=1,128 do t[i] = {['field'..i]=string.rep(string.char(i), 64)} end return messagepack.encode(t)"
+        "local t={} for i=1,128 do t[i] = {['field'..i]=string.rep(string.char(i), 64)} end return messagepack.encode(t)",
+        "return string.char(0xdc, 0, 128) .. string.rep(string.char(0xd6, 0xff, 0, 0, 0, 1), 128), {ext = {[-1] = function(data) return {data = data .. '!'} end}}"
     };
+    const uint32_t fixture_count = sizeof(fixtures) / sizeof(fixtures[0]);
     int points[] = { 0, 1, 2, 3, 4, 8, 16, 32, 64, 128, 256, 512, 1024 };
+    const uint32_t point_count = sizeof(points) / sizeof(points[0]);
     int failures = 0, successes = 0;
-    for (uint32_t input = 0; input < 2; ++input)
+    for (uint32_t input = 0; input < fixture_count; ++input)
     {
         Require(luaL_loadstring(L, fixtures[input]) == 0, "Cannot prepare decode OOM input");
-        Call(L, 0, 1);
+        Call(L, 0, 2);
+        int options = luaL_ref(L, LUA_REGISTRYINDEX);
         int argument = luaL_ref(L, LUA_REGISTRYINDEX);
-        for (uint32_t point = 0; point < sizeof(points) / sizeof(points[0]); ++point)
+        for (uint32_t point = 0; point < point_count; ++point)
         {
             lua_gc(L, LUA_GCCOLLECT, 0);
             lua_rawgeti(L, LUA_REGISTRYINDEX, decode);
             lua_rawgeti(L, LUA_REGISTRYINDEX, argument);
+            lua_rawgeti(L, LUA_REGISTRYINDEX, options);
             FailingLuaAllocator failing;
             failing.m_Original = lua_getallocf(L, &failing.m_Context);
             failing.m_Remaining = points[point];
             lua_setallocf(L, FailLuaAllocation, &failing);
-            int status = lua_pcall(L, 1, 1, 0);
+            int status = lua_pcall(L, 2, 1, 0);
             lua_setallocf(L, failing.m_Original, failing.m_Context);
             failures += status != 0;
             successes += status == 0;
@@ -71,10 +77,11 @@ static int TestDecodeOutOfMemory()
             lua_pop(L, 1);
         }
         luaL_unref(L, LUA_REGISTRYINDEX, argument);
+        luaL_unref(L, LUA_REGISTRYINDEX, options);
     }
     Require(failures > 0 && successes > 0, "Decode OOM tests must exercise failures and success");
     lua_close(L);
-    printf("Decoding allocation-failure tests passed: 26 trials (%d failures, %d successes)\n", failures, successes);
+    printf("Decoding allocation-failure tests passed: %u trials (%d failures, %d successes)\n", fixture_count * point_count, failures, successes);
     return 0;
 }
 

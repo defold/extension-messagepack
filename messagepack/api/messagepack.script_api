@@ -22,8 +22,9 @@
         All integer and floating formats become Lua numbers. Lua's double
         precision representation can round integers beyond its exact integer
         range. String and binary formats both become binary-safe Lua strings.
-        Empty arrays and maps both become empty tables. Extension types,
-        including timestamps, are unsupported.
+        Empty arrays and maps both become empty tables. Extension values,
+        including timestamps (type -1), raise an error unless `ext` has a
+        handler for their type.
       parameters:
         - name: bytes
           type: string
@@ -37,6 +38,14 @@
               type: boolean
               optional: true
               desc: Preserve nil values as messagepack.null. Defaults to false.
+            - name: ext
+              type: table
+              optional: true
+              desc: |-
+                Handler functions keyed by extension type (-128 to 127), each
+                called as `handler(data, type)` with the raw payload string.
+                The result replaces the extension value; nil drops the entry
+                like a MessagePack nil. Types without a handler raise an error.
       returns:
         - name: value
           type: ["nil", boolean, number, string, table, userdata]
@@ -54,6 +63,15 @@
                 decode_null_as_userdata = true
             })
             assert(values[2] == messagepack.null)
+            ```
+        - desc: |-
+            ```lua
+            -- msgpackr (JavaScript) writes undefined as extension type 0
+            local UNDEFINED = setmetatable({}, {
+                __tostring = function() return "undefined" end
+            })
+            local options = {ext = {[0] = function() return UNDEFINED end}}
+            local value = messagepack.decode(bytes, options)
             ```
 
     - name: encode

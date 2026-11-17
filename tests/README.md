@@ -33,14 +33,17 @@ independently of the extension's encoder. They cover every leading byte:
 - Fixed and variable string, binary, array and map formats, including the
   15/16, 31/32, 255/256 and 65535/65536 length transitions.
 - Reserved bytes, truncated headers/payloads, excessive lengths, trailing data,
-  invalid Lua keys, duplicate keys and explicit rejection of extension types,
-  including valid timestamp32/64/96 packets.
+  invalid Lua keys, duplicate keys and rejection of extension types without a
+  handler, including valid timestamp32/64/96 packets.
+- Every fixext and ext format delivered to `ext` handlers with its signed type
+  and raw payload, including the 255/256 and 65535/65536 length transitions.
 
 The supported profile maps MessagePack values to ordinary Lua values. Integer
 precision is limited by Lua doubles; arrays/maps share the table representation;
 strings/binary share a byte-string representation. Encoding Lua strings uses
-the string tag without validating UTF-8. Extension types and timestamps are
-unsupported. These mappings are tested rather than claiming full wire-type
+the string tag without validating UTF-8. Extension types and timestamps decode
+only through caller-supplied handlers and are never encoded. These mappings are
+tested rather than claiming full wire-type
 identity for decode/encode round trips.
 
 `test_interop.py` uses the independently maintained Python `msgpack` package:

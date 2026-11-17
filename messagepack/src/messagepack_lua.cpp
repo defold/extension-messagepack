@@ -20,6 +20,7 @@ namespace dmMessagePack
     {
         lua_State* m_Lua;
         bool       m_NullAsUserdata;
+        int        m_ExtIndex; // stack index of options.ext; 0 when absent
 
         void Null()
         {
@@ -49,19 +50,42 @@ namespace dmMessagePack
             luaL_checkstack(m_Lua, 4, "messagepack.decode: Lua stack limit");
             lua_createtable(m_Lua, map ? 0 : (int)count, map ? (int)count : 0);
         }
-        bool Key(uint8_t tag)
+        bool Key()
         {
-            // Every decoded type except nil and NaN is a valid Lua map key.
-            if (tag == 0xc0)
+            // Every decoded value except nil and NaN is a valid Lua map key.
+            // Checks the value, not the tag: an extension handler may return either.
+            int type = lua_type(m_Lua, -1);
+            if (type == LUA_TNUMBER)
             {
-                return m_NullAsUserdata;
+                double number = lua_tonumber(m_Lua, -1);
+                return number == number;
             }
-            if (tag != 0xca && tag != 0xcb)
+            return type != LUA_TNIL;
+        }
+        bool Ext(int type, const char* bytes, uint32_t count)
+        {
+            luaL_checkstack(m_Lua, 3, "messagepack.decode: Lua stack limit");
+            if (m_ExtIndex == 0)
             {
-                return true;
+                lua_pushnil(m_Lua);
             }
-            double number = lua_tonumber(m_Lua, -1);
-            return number == number;
+            else
+            {
+                lua_rawgeti(m_Lua, m_ExtIndex, type);
+            }
+            if (lua_isnil(m_Lua, -1))
+            {
+                luaL_error(m_Lua, "messagepack.decode: unsupported extension type %d", type);
+            }
+            if (!lua_isfunction(m_Lua, -1))
+            {
+                luaL_error(m_Lua, "messagepack.decode: options.ext[%d] is not a function", type);
+            }
+            // bytes points into the input string, which stays anchored at stack index 1
+            lua_pushlstring(m_Lua, bytes, count);
+            lua_pushinteger(m_Lua, type);
+            lua_call(m_Lua, 2, 1);
+            return true;
         }
         void Set(uint32_t index, bool map)
         {
@@ -79,24 +103,41 @@ namespace dmMessagePack
     /*# Decode one complete MessagePack value. The input is borrowed only for
      * this call; returned strings and tables are owned by Lua. Nil defaults
      * to Lua nil. Set decode_null_as_userdata to retain nulls in containers.
+     * Extension values are passed to options.ext[type](data, type), whose
+     * result replaces them; types without a handler raise an error.
      * @name messagepack.decode
      * @param bytes [type:string] MessagePack bytes, including embedded NUL
      * @param [options] [type:table] Optional decode_null_as_userdata boolean
+     * and ext table of handler functions keyed by extension type
      * @return value [type:any] Decoded value; raises a Lua error on failure
      */
     static int Decode(lua_State* L)
     {
         size_t length;
         const char* bytes = luaL_checklstring(L, 1, &length);
-        DecodeContext consumer = { L, false };
+        DecodeContext consumer = { L, false, 0 };
         if (!lua_isnoneornil(L, 2))
         {
             luaL_checktype(L, 2, LUA_TTABLE);
             lua_getfield(L, 2, "decode_null_as_userdata");
             consumer.m_NullAsUserdata = lua_toboolean(L, -1) != 0;
             lua_pop(L, 1);
+            lua_getfield(L, 2, "ext");
+            if (lua_isnil(L, -1))
+            {
+                lua_pop(L, 1);
+            }
+            else if (lua_istable(L, -1))
+            {
+                consumer.m_ExtIndex = lua_gettop(L); // stays below the decoded value
+            }
+            else
+            {
+                return luaL_error(L, "messagepack.decode: options.ext must be a table");
+            }
         }
-        // The reader owns no native allocations, so Lua OOM can unwind directly.
+        // The reader owns no native allocations, so Lua errors (OOM, extension
+        // handlers) can unwind directly.
         dmMessagePackDecode::Cursor cursor = { (const uint8_t*)bytes, (const uint8_t*)bytes + length, 0 };
         if (!dmMessagePackDecode::ReadValue(&cursor, &consumer, 0))
         {

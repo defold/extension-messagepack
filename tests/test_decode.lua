@@ -74,6 +74,33 @@ return function()
 	-- Every proper prefix of a nested value must fail, including string payloads.
 	local complete = char(0x81, 0xa1) .. "x" .. char(0x93, 1, 0xa3) .. "abc" .. char(0xc4, 2, 0, 0xff)
 	for i = 0, #complete - 1 do rejects(complete:sub(1, i)) end
+	-- Extension handlers: their result replaces the value, nil drops it like a null.
+	local undefined = {ext = {[0] = function() return nil end}}
+	check(char(0x82, 0xa1) .. "a" .. char(1, 0xa1) .. "b" .. char(0xd4, 0, 0), {a = 1}, undefined)
+	check(char(0x93, 1, 0xd4, 0, 0, 3), {[1] = 1, [3] = 3}, undefined)
+	local timestamp = {ext = {[-1] = function(data) return {seconds = data:byte(4)} end}}
+	check(char(0x91, 0xd6, 0xff, 0, 0, 0, 42), {{seconds = 42}}, timestamp)
+	check(char(0x81, 0xd4, 1, 9, 7), {[9] = 7}, {ext = {[1] = function(data) return data:byte() end}})
+	check(char(0xd5, 2, 0x91, 0x2a), {42}, {ext = {[2] = function(data) return decode(data) end}})
+	check(char(0x92, 0xc0, 0xd4, 0, 0), {messagepack.null, true}, {decode_null_as_userdata = true, ext = {[0] = function() return true end}})
+	-- Rejected: unregistered types, nil/NaN keys, bad handlers, and handler errors.
+	rejects(char(0xd4, 1, 0), undefined)
+	rejects(char(0x81, 0xd4, 0, 0, 1), undefined)
+	rejects(char(0x81, 0xd4, 0, 0, 1), {ext = {[0] = function() return 0 / 0 end}})
+	rejects(char(0xd4, 0, 0), {ext = {[0] = true}})
+	rejects(char(0xd4, 0, 0), {ext = true})
+	rejects(char(0xd4, 0, 0), {ext = {[0] = function() error("handler failed") end}})
+	local _, message = pcall(decode, char(0xd6, 0xff, 0, 0, 0, 0))
+	assert(message:find("unsupported extension type -1", 1, true), message)
+	_, message = pcall(decode, char(0xd4, 0, 0), {ext = {[0] = function() error("handler failed") end}})
+	assert(message:find("handler failed", 1, true), message)
+	-- Truncated extensions fail before any handler runs.
+	local calls = 0
+	local counting = {ext = {[0] = function() calls = calls + 1 end}}
+	for _, bytes in ipairs({char(0xd4), char(0xd4, 0), char(0xd8, 0) .. string.rep("x", 15), char(0xc7), char(0xc7, 2, 0, 0), char(0xc9, 0xff, 0xff, 0xff, 0xff, 0)}) do
+		rejects(bytes, counting)
+	end
+	assert(calls == 0)
 	assert(not pcall(decode, {}))
 	assert(not pcall(decode, char(1), "invalid options"))
 	return checks + 2

@@ -5,7 +5,7 @@
 
 -- Golden bytes follow https://github.com/msgpack/msgpack/blob/master/spec.md.
 -- Cover all 256 leading bytes, wire-width boundaries, floating values and the
--- documented Lua mapping. Extension tags are explicitly unsupported.
+-- documented Lua mapping. Extension tags decode only through ext handlers.
 return function()
 	local decode, encode, char = messagepack.decode, messagepack.encode, string.char
 	local preserve = {decode_null_as_userdata = true}
@@ -128,10 +128,36 @@ return function()
 		rejects(char(row[1],0) .. string.rep("x",row[2]))
 	end
 	for _, row in ipairs({{0xc7,1},{0xc8,2},{0xc9,4}}) do rejects(char(row[1]) .. be(1,row[2]) .. char(0) .. "x") end
-	-- Valid timestamp32, timestamp64 and timestamp96 are outside this API's profile.
+	-- Without an ext handler, valid timestamp32, timestamp64 and timestamp96 are rejected.
 	rejects(hex("d6ff00000000"))
 	rejects(hex("d7ff0000000000000000"))
 	rejects(hex("c70cff000000000000000000000000"))
+	-- With handlers, every extension format delivers its signed type and raw payload.
+	local raw = {ext = {}}
+	for t = -128, 127 do raw.ext[t] = function(data, ext_type) return {ext_type, data} end end
+	local function extension(bytes, ext_type, data)
+		local value = decode(bytes, raw)
+		assert(value[1] == ext_type and value[2] == data, "extension framing differs at case " .. checks)
+		checks = checks + 1
+	end
+	for _, row in ipairs({{0xd4,1},{0xd5,2},{0xd6,4},{0xd7,8},{0xd8,16}}) do
+		extension(char(row[1], 0x80) .. string.rep("x", row[2]), -128, string.rep("x", row[2]))
+	end
+	for _, row in ipairs({{0xc7,1,{0,255}},{0xc8,2,{0,256,65535}},{0xc9,4,{0,65536}}}) do
+		for _, n in ipairs(row[3]) do
+			local data = string.rep("\0\255", n):sub(1, n)
+			extension(char(row[1]) .. be(n,row[2]) .. char(0x7f) .. data, 127, data)
+		end
+	end
+	extension(hex("d6ff00000000"), -1, string.rep("\0", 4))
+	extension(hex("d7ff0000000000000000"), -1, string.rep("\0", 8))
+	extension(hex("c70cff000000000000000000000000"), -1, string.rep("\0", 12))
+	for _, bytes in ipairs({hex("d6ff00000000"), hex("c70cff000000000000000000000000"), hex("c9000000020501ff")}) do
+		for n = 0, #bytes - 1 do assert(not pcall(decode, bytes:sub(1, n), raw)); checks = checks + 1 end
+		assert(not pcall(decode, bytes .. char(0), raw)); checks = checks + 1
+	end
+	-- A 4 GiB ext 32 length must not wrap the bounds check on 32-bit targets.
+	assert(not pcall(decode, hex("c9ffffffff00"), raw)); checks = checks + 1
 	check(hex("81c02a"), {[messagepack.null]=42})
 	assert(not pcall(decode, hex("81c02a")))
 	check(hex("82012ac32b"), {[1]=42, [true]=43})
