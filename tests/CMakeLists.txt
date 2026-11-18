@@ -33,7 +33,6 @@ add_library(messagepack_codec STATIC
 target_include_directories(messagepack_codec PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/support"
     "${EXTENSION_ROOT}/messagepack/include"
-    "${EXTENSION_ROOT}/messagepack/include/messagepack"
     "${EXTENSION_ROOT}/messagepack/src"
     "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(messagepack_codec PUBLIC lua51)

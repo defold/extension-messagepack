@@ -3,8 +3,10 @@
 These tests compile the production codec with real Lua 5.1 headers and a pinned
 Lua 5.1.5 source archive, verified by SHA-256. The small headers under `support/`
 adapt Defold's include paths to those public headers; they do not implement or
-mock Lua. No Defold engine checkout, SDK binaries or extension-build server is
-required. Test-only `json.null` aliases the same null light-userdata sentinel.
+mock Lua. The codec uses only the extension's public include root, matching
+Defold's header layout. No Defold engine checkout, SDK binaries or extension-build
+server is required for these standalone tests. Test-only `json.null` aliases the
+same null light-userdata sentinel.
 
 ```sh
 python3 -m venv .cache/test-python

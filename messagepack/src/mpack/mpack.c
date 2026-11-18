@@ -32,7 +32,7 @@
 #define MPACK_INTERNAL 1
 #define MPACK_EMIT_INLINE_DEFS 1
 
-#include "mpack.h"
+#include <messagepack/mpack.h>
 
 
 /* mpack/mpack-platform.c.c */
