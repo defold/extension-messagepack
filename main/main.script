@@ -1,7 +1,19 @@
-function init(self)
-	local tests = assert(loadstring(assert(sys.load_resource("/tests/test_decode.lua"))))()
-	print("MessagePack decode tests passed:", tests())
-	local encode_tests = assert(loadstring(assert(sys.load_resource("/tests/test_encode.lua"))))()
-	print("MessagePack encode tests passed:", encode_tests())
+local function run_tests()
+	for _, suite in ipairs({ "test_decode", "test_encode", "test_spec" }) do
+		local tests = assert(loadstring(assert(sys.load_resource("/tests/" .. suite .. ".lua"))))()
+		print("MessagePack " .. suite .. " passed:", tests())
+	end
 	print("MessagePack unit tests complete")
+end
+
+function init(self)
+	if sys.get_config_int("messagepack_tests.quit", 0) == 1 then
+		local ok, error_message = pcall(run_tests)
+		if not ok then
+			print("MessagePack unit tests failed:", error_message)
+		end
+		sys.exit(ok and 0 or 1)
+	else
+		run_tests()
+	end
 end

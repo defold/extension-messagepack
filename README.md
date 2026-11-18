@@ -142,8 +142,10 @@ cmake --build build_unit --parallel 4
 ctest --test-dir build_unit --output-on-failure
 ```
 
-Open `game.project` in Defold to run the encoder and decoder unit cases in
-the engine. The library dependency includes only the native extension.
+Open `game.project` in Defold to run the codec and specification tests in the
+engine. CI also performs a full Bob build and runs the resulting engine; see
+the [Defold integration build instructions](tests/README.md#defold-integration-build).
+The library dependency includes only the native extension.
 
 ## Dependencies and license
 

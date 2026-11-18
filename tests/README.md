@@ -23,6 +23,28 @@ external dependency and is not instrumented. The workflow runs ordinary and
 sanitized builds on Linux and macOS. Test allocation hooks check native cleanup and inject allocation failures
 independently of the sanitizer.
 
+## Defold integration build
+
+CI also builds the complete native extension through the official build service
+using Bob 1.14.1 (SDK `ee283d4dad9fa451dd6399d83602e1dc25133681`) and Java 25.
+It runs the resulting headless Defold engine with the decode, encode and
+specification suites, requiring a successful exit and the completion marker.
+This checks the extension manifest, SDK headers, native linking and real LuaJIT
+integration in addition to the standalone codec tests.
+
+For an Apple Silicon Mac, use [official Bob 1.14.1](https://d.defold.com/archive/ee283d4dad9fa451dd6399d83602e1dc25133681/bob/bob.jar):
+
+```sh
+java -jar /path/to/bob.jar --platform arm64-macos --architectures arm64-macos \
+  --variant headless --binary-output build/engine resolve build
+chmod +x build/engine/arm64-osx/dmengine
+build/engine/arm64-osx/dmengine --config=messagepack_tests.quit=1 build/default/game.projectc
+```
+
+Bob uses `macos` for the CLI platform and `osx` for its native artifact directory
+in this release. On an Intel Mac, replace `arm64` with `x86_64`. Without the
+`messagepack_tests.quit` flag, the test project remains open after running tests.
+
 ## Specification coverage
 
 The golden vectors in `test_spec.lua` are derived directly from the

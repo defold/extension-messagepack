@@ -1,6 +1,6 @@
 [project]
 title = extension-messagepack
-custom_resources = /tests/test_decode.lua,/tests/test_encode.lua
+custom_resources = /tests/test_decode.lua,/tests/test_encode.lua,/tests/test_spec.lua
 
 [bootstrap]
 main_collection = /main/main.collectionc
