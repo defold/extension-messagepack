@@ -60,6 +60,7 @@ when used as a dependency.
 ```lua
 local value = messagepack.decode(bytes)
 local value = messagepack.decode(bytes, {decode_null_as_userdata = true})
+local value = messagepack.decode(bytes, {ext = {[-1] = on_timestamp}})
 local bytes = messagepack.encode(value)
 local bytes = messagepack.encode(value, {encode_empty_table_as_map = false})
 ```
@@ -75,6 +76,7 @@ truncated or trailing input. Values map as follows:
 | string or binary | binary-safe string, including embedded NUL |
 | array | table with indices starting at 1 |
 | map | table |
+| extension | result of the `ext` handler for its type; an error without one |
 
 The default null mapping matches `json.decode`: null object fields and null
 array entries become absent Lua entries. Use `decode_null_as_userdata` to
@@ -107,9 +109,39 @@ local values = messagepack.decode(bytes, {decode_null_as_userdata = true})
 assert(values[2] == messagepack.null)
 ```
 
-MessagePack application extension types, including the timestamp extension,
-raise an explicit unsupported-type error. Functions, threads and other userdata
-are also unsupported by the encoder.
+### Extension types
+
+Extension values, including the timestamp extension (type -1), raise an
+unsupported-type error unless `ext` has a handler for their type. A handler is
+called as `handler(data, type)`, where `data` is the raw payload as a Lua
+string, and its result replaces the extension value. Returning nil behaves
+like a MessagePack nil: the entry is dropped from its table. Handlers may
+raise errors, which propagate out of `messagepack.decode`.
+
+For example, JavaScript's [msgpackr](https://github.com/kriszyp/msgpackr)
+writes `undefined` as extension type 0:
+
+```lua
+local UNDEFINED = setmetatable({}, {__tostring = function() return "undefined" end})
+local options = {ext = {[0] = function() return UNDEFINED end}}
+local value = messagepack.decode(bytes, options)
+```
+
+Handlers are looked up by type, so types an application does not expect still
+raise an error. To accept every type, register one handler for all of them:
+
+```lua
+local ext = {}
+for ext_type = -128, 127 do
+	ext[ext_type] = function(data, ext_type) return {type = ext_type, data = data} end
+end
+local value = messagepack.decode(bytes, {ext = ext})
+```
+
+Reuse the options table across calls; building it per call allocates.
+
+Functions, threads and userdata other than `messagepack.null` are unsupported
+by the encoder, and the encoder does not write extension types.
 
 The production decoder uses a bounded, SAX-style memory reader that emits
 values directly into Lua. It allocates tables from the encoded element counts,

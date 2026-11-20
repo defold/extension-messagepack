@@ -19,6 +19,7 @@ namespace dmMessagePackTest
     {
         mpack_reader_t m_Reader;
         bool           m_NullAsUserdata;
+        int            m_ExtIndex; // stack index of options.ext inside DecodeProtected; 0 when absent
     };
 
     static void CheckReader(lua_State* L, mpack_reader_t* reader)
@@ -123,9 +124,34 @@ namespace dmMessagePackTest
                 mpack_done_type(reader, type);
                 break;
             }
+            case mpack_type_ext:
+            {
+                int ext_type = mpack_tag_ext_exttype(&tag);
+                uint32_t length = mpack_tag_ext_length(&tag);
+                const char* bytes = mpack_read_bytes_inplace(reader, length);
+                CheckReader(L, reader);
+                luaL_checkstack(L, 3, "messagepack.decode: Lua stack limit");
+                if (context->m_ExtIndex == 0)
+                {
+                    lua_pushnil(L);
+                }
+                else
+                {
+                    lua_rawgeti(L, context->m_ExtIndex, ext_type);
+                }
+                if (!lua_isfunction(L, -1))
+                {
+                    luaL_error(L, "messagepack.decode: unsupported extension type %d", ext_type);
+                }
+                lua_pushlstring(L, bytes, length);
+                lua_pushinteger(L, ext_type);
+                lua_call(L, 2, 1);
+                mpack_done_type(reader, type);
+                break;
+            }
             default:
             {
-                luaL_error(L, "messagepack.decode: extension types are not supported");
+                luaL_error(L, "messagepack.decode: unsupported type");
             }
         }
     }
@@ -133,6 +159,7 @@ namespace dmMessagePackTest
     static int DecodeProtected(lua_State* L)
     {
         DecodeContext* context = (DecodeContext*)lua_touserdata(L, 1);
+        context->m_ExtIndex = lua_istable(L, 2) ? 2 : 0;
         PushValue(L, context, 0);
         CheckReader(L, &context->m_Reader);
         if (mpack_reader_remaining(&context->m_Reader, 0))
@@ -148,21 +175,36 @@ namespace dmMessagePackTest
         size_t length;
         const char* bytes = luaL_checklstring(L, 1, &length);
         bool null_as_userdata = false;
+        luaL_checkstack(L, 4, "messagepack.decode: Lua stack limit");
+        int ext = 0;
         if (!lua_isnoneornil(L, 2))
         {
             luaL_checktype(L, 2, LUA_TTABLE);
             lua_getfield(L, 2, "decode_null_as_userdata");
             null_as_userdata = lua_toboolean(L, -1) != 0;
             lua_pop(L, 1);
+            lua_getfield(L, 2, "ext");
+            if (!lua_isnil(L, -1) && !lua_istable(L, -1))
+            {
+                return luaL_error(L, "messagepack.decode: options.ext must be a table");
+            }
+            ext = lua_gettop(L);
         }
 
-        luaL_checkstack(L, 2, "messagepack.decode: Lua stack limit");
         lua_pushcfunction(L, DecodeProtected);
         DecodeContext context;
         context.m_NullAsUserdata = null_as_userdata;
         mpack_reader_init_data(&context.m_Reader, bytes, length);
         lua_pushlightuserdata(L, &context);
-        int status = lua_pcall(L, 1, 1, 0);
+        if (ext)
+        {
+            lua_pushvalue(L, ext);
+        }
+        else
+        {
+            lua_pushnil(L);
+        }
+        int status = lua_pcall(L, 2, 1, 0);
         mpack_error_t error = mpack_reader_destroy(&context.m_Reader);
         // Release native state before propagating a Lua longjmp, including OOM.
         if (status)

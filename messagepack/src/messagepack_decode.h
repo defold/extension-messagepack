@@ -195,7 +195,33 @@ namespace dmMessagePackDecode
                 }
                 default:
                 {
-                    return Fail(cursor, "extension types are not supported");
+                    // fixext 1/2/4/8/16 (0xd4..0xd8) or ext 8/16/32 (0xc7..0xc9)
+                    if (tag >= 0xd4)
+                    {
+                        length = 1u << (tag - 0xd4);
+                    }
+                    else
+                    {
+                        uint32_t width = 1u << (tag - 0xc7);
+                        if (!Need(cursor, width))
+                        {
+                            return false;
+                        }
+                        length = (uint32_t)Unsigned(cursor, width);
+                    }
+                    // Checked separately: 1 + length can wrap a 32-bit size_t.
+                    if (!Need(cursor, 1))
+                    {
+                        return false;
+                    }
+                    uint8_t type = *cursor->m_Position++;
+                    if (!Need(cursor, length))
+                    {
+                        return false;
+                    }
+                    const char* data = (const char*)cursor->m_Position;
+                    cursor->m_Position += length;
+                    return consumer->Ext(type < 0x80 ? (int)type : (int)type - 256, data, length) || Fail(cursor, "unsupported extension type");
                 }
             }
         }
@@ -243,7 +269,7 @@ namespace dmMessagePackDecode
                     {
                         return false;
                     }
-                    if (!consumer->Key(key_tag))
+                    if (!consumer->Key())
                     {
                         return Fail(cursor, "map key is nil or NaN");
                     }
